@@ -1,0 +1,76 @@
+#!/bin/bash
+
+[[ -z "${1}" ]] && printf -- "Missing host argument.\n" >&2 && exit 1
+tgt="${1}"
+
+iterations="10"
+if [[ -n "${2}" ]]; then
+	iterations="${2}"
+fi
+
+# An experiment with ssh options for sharing multiple sessions.
+
+ssh_opts_base="-o BatchMode=yes"
+
+function do_ssh_cycle {
+	local err
+
+	echo ssh ${ssh_opts} ${1} mkdir /tmp/ssh-exp
+	ssh ${ssh_opts} ${1} mkdir /tmp/ssh-exp
+	err=${?}
+	if [[ ${err} -ne 0 ]]; then
+		printf -- "ssh %s mkdir failed with %s\n" "${1}" "${err}" >&2
+		exit 1
+	fi
+	echo scp ${ssh_opts} local-file ${1}:/tmp/ssh-exp/
+	scp ${ssh_opts} local-file ${1}:/tmp/ssh-exp/
+	err=${?}
+	if [[ ${err} -ne 0 ]]; then
+		printf -- "scp %s local-file failed with %s\n" "${1}" "${err}" >&2
+		exit 1
+	fi
+	echo ssh ${ssh_opts} ${1} md5sum /tmp/ssh-exp/local-file
+	ssh ${ssh_opts} ${1} md5sum /tmp/ssh-exp/local-file
+	err=${?}
+	if [[ ${err} -ne 0 ]]; then
+		printf -- "ssh %s md5sum failed with %s\n" "${1}" "${err}" >&2
+		exit 1
+	fi
+	echo ssh ${ssh_opts} ${1} 'rm /tmp/ssh-exp/local-file; rmdir /tmp/ssh-exp'
+	ssh ${ssh_opts} ${1} 'rm /tmp/ssh-exp/local-file; rmdir /tmp/ssh-exp'
+	err=${?}
+	if [[ ${err} -ne 0 ]]; then
+		printf -- "ssh %s rm/rmdir failed with %s\n" "${1}" "${err}" >&2
+		exit 1
+	fi
+}
+
+trap "rm -f local-file local-socket" SIGINT err exit
+head -c 10k < /dev/urandom > local-file
+
+
+# First test is without `ControlMaster` option.
+ssh_opts="${ssh_opts_base}"
+SECONDS=0
+for i in $(seq -s ' ' 1 ${iterations}); do
+	printf -- "Iteration %03d\n" ${i}
+    do_ssh_cycle "${tgt}"
+done
+normal_secs=${SECONDS}
+printf -- "\n\nNormal ssh for %d cycles of 4 ssh/scp commands took %ds\n\n\n\n" ${iterations} ${normal_secs}
+
+
+# Now use ControlMaster
+ssh_opts="${ssh_opts_base} -o ControlPath=./local-socket"
+SECONDS=0
+# First we have to setup the local ssh "control master".
+ssh -o ControlMaster=yes -o ControlPersist=yes ${ssh_opts} ${tgt} true
+for i in $(seq -s ' ' 1 ${iterations}); do
+	printf -- "Iteration %03d\n" ${i}
+    do_ssh_cycle "${tgt}"
+done
+# Tell the ssh "control master" to exit.
+ssh ${ssh_opts} -O exit ${tgt}
+# The measurement time includes the setup and teardown of the ssh "control master."
+shared_secs=${SECONDS}
+printf -- "\n\nShared-session ssh for %d cycles of 4 ssh/scp commands took %ds, %d secs faster\n" ${iterations} ${shared_secs} $(( normal_secs - shared_secs ))
