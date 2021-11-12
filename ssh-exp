@@ -45,7 +45,7 @@ function do_ssh_cycle {
 	fi
 }
 
-trap "rm -f local-file local-socket" SIGINT err exit
+trap "rm -f local-file local-socket-*" SIGINT err exit
 head -c 10k < /dev/urandom > local-file
 
 
@@ -61,7 +61,7 @@ printf -- "\n\nNormal ssh for %d cycles of 4 ssh/scp commands took %ds\n\n\n\n" 
 
 
 # Now use ControlMaster
-ssh_opts="${ssh_opts_base} -o ControlPath=./local-socket"
+ssh_opts="${ssh_opts_base} -o ControlPath=./local-socket-%C"
 SECONDS=0
 # First we have to setup the local ssh "control master".
 ssh -o ControlMaster=yes -o ControlPersist=yes ${ssh_opts} ${tgt} true
