@@ -9,8 +9,8 @@ Let's say we need to do the following to execute a particular command:
     scp ${remote_host}:/var/tmp/work/result.txt
     ssh ${remote_host} rm -rf /var/tmp/work
 
-Without using ssh shared sesions, each `ssh`/`scp` has to establish a
-connetion to the remote host, setup the remote `sshd`, send the command,
+Without using ssh shared sessions, each `ssh`/`scp` has to establish a
+connection to the remote host, setup the remote `sshd`, send the command,
 close it all down.
 
 With ssh shared sessions, the connection is established once so that the
